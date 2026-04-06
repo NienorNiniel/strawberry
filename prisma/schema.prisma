@@ -1,0 +1,75 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum SourceType {
+  SUBSTACK
+  RSS
+}
+
+model Source {
+  id        String     @id @default(cuid())
+  url       String     @unique
+  name      String
+  type      SourceType
+  feedUrl   String
+  createdAt DateTime   @default(now())
+  articles  Article[]
+}
+
+model Article {
+  id          String   @id @default(cuid())
+  sourceId    String
+  url         String   @unique
+  title       String
+  content     String
+  publishedAt DateTime?
+  fetchedAt   DateTime @default(now())
+  source      Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  tweets      Tweet[]
+
+  @@index([sourceId])
+}
+
+model Tweet {
+  id          String       @id @default(cuid())
+  articleId   String
+  content     String
+  threadId    String?
+  threadOrder Int          @default(0)
+  createdAt   DateTime     @default(now())
+  article     Article      @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  impressions Impression[]
+  bookmark    Bookmark?
+
+  @@index([articleId])
+  @@index([threadId])
+}
+
+model Impression {
+  id       String   @id @default(cuid())
+  tweetId  String
+  monthKey String
+  seenAt   DateTime @default(now())
+  tweet    Tweet    @relation(fields: [tweetId], references: [id], onDelete: Cascade)
+
+  @@unique([tweetId, monthKey])
+  @@index([monthKey])
+}
+
+model Bookmark {
+  id          String    @id @default(cuid())
+  tweetId     String    @unique
+  srStage     Int       @default(0)
+  nextDueAt   DateTime
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  tweet       Tweet     @relation(fields: [tweetId], references: [id], onDelete: Cascade)
+
+  @@index([nextDueAt])
+}
