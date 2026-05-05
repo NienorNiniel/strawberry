@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "../../../../../lib/db";
 import { withAuth } from "../../../../../lib/auth";
-import { fetchArticlesFromFeed } from "../../../../../lib/sources";
+import { fetchArticlesFromFeed, fetchArticlesFromSitemap } from "../../../../../lib/sources";
 import { generateTweets } from "../../../../../lib/claude";
 
 const MAX_ARTICLES_PER_SYNC = 5;
@@ -46,7 +46,16 @@ export const POST = withAuth(async (
     ).map((a) => a.url)
   );
 
-  const newArticles = feedArticles.filter((a) => !existingUrls.has(a.url));
+  let newArticles = feedArticles.filter((a) => !existingUrls.has(a.url));
+
+  // Always try the sitemap for historical backfill — not just when RSS is thin
+  try {
+    const allKnownUrls = new Set([...existingUrls, ...newArticles.map(a => a.url)]);
+    const sitemapArticles = await fetchArticlesFromSitemap(source.feedUrl, allKnownUrls, 100);
+    newArticles = [...newArticles, ...sitemapArticles];
+  } catch (e) {
+    console.error("Sitemap fetch failed (non-fatal):", e);
+  }
 
   // Process up to MAX_ARTICLES_PER_SYNC new articles
   const batch = newArticles.slice(0, MAX_ARTICLES_PER_SYNC);

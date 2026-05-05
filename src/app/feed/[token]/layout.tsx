@@ -16,7 +16,7 @@ export default async function FeedLayout(
       {/* Top header */}
       <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-100">
         <div className="max-w-lg mx-auto flex items-center justify-center py-3 px-4">
-          <StrawberryLogo size={28} />
+          <StrawberryLogo size={38} />
         </div>
       </header>
 

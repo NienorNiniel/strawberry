@@ -9,10 +9,14 @@ interface TweetData {
   threadId: string | null;
   threadOrder: number;
   isDueForReview: boolean;
+  articleId: string;
   bookmark: { id: string; srStage: number } | null;
   article: {
+    url: string;
     title: string;
-    source: { name: string };
+    publishedAt: string | null;
+    savedArticle: { id: string } | null;
+    source: { name: string; iconUrl: string | null };
   };
 }
 
@@ -20,7 +24,6 @@ export default function Feed({ token }: { token: string }) {
   const [tweets, setTweets] = useState<TweetData[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [cursor, setCursor] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
   const seenBuffer = useRef<Set<string>>(new Set());
   const flushTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -28,15 +31,21 @@ export default function Feed({ token }: { token: string }) {
 
   const headers = { "x-auth-token": token };
 
+  const loadedIds = useRef<Set<string>>(new Set());
+
   const fetchFeed = useCallback(
-    async (cursorVal?: string | null) => {
+    async () => {
       const params = new URLSearchParams();
-      if (cursorVal) params.set("cursor", cursorVal);
+      const ids = [...loadedIds.current];
+      if (ids.length > 0) params.set("exclude", ids.join(","));
 
       const res = await fetch(`/api/feed?${params}`, { headers });
       if (!res.ok) return;
 
       const data = await res.json();
+      if (data?.tweets) {
+        data.tweets.forEach((t: { id: string }) => loadedIds.current.add(t.id));
+      }
       return data;
     },
     [token]
@@ -47,7 +56,6 @@ export default function Feed({ token }: { token: string }) {
     fetchFeed().then((data) => {
       if (data) {
         setTweets(data.tweets);
-        setCursor(data.nextCursor);
         setHasMore(!!data.nextCursor);
       }
       setLoading(false);
@@ -63,10 +71,9 @@ export default function Feed({ token }: { token: string }) {
       ([entry]) => {
         if (entry.isIntersecting && hasMore && !loadingMore) {
           setLoadingMore(true);
-          fetchFeed(cursor).then((data) => {
+          fetchFeed().then((data) => {
             if (data) {
               setTweets((prev) => [...prev, ...data.tweets]);
-              setCursor(data.nextCursor);
               setHasMore(!!data.nextCursor);
             }
             setLoadingMore(false);
@@ -78,7 +85,7 @@ export default function Feed({ token }: { token: string }) {
 
     observer.observe(el);
     return () => observer.disconnect();
-  }, [cursor, hasMore, loadingMore, fetchFeed]);
+  }, [hasMore, loadingMore, fetchFeed]);
 
   // Flush seen tweets in batches
   const flushSeen = useCallback(() => {
@@ -109,6 +116,37 @@ export default function Feed({ token }: { token: string }) {
       flushSeen();
     };
   }, [flushSeen]);
+
+  const [savedArticleIds, setSavedArticleIds] = useState<Set<string>>(new Set());
+
+  // Track saved articles from initial data
+  useEffect(() => {
+    const ids = new Set<string>();
+    tweets.forEach((t) => {
+      if (t.article.savedArticle) ids.add(t.articleId);
+    });
+    setSavedArticleIds((prev) => {
+      const merged = new Set(prev);
+      ids.forEach((id) => merged.add(id));
+      return merged;
+    });
+  }, [tweets]);
+
+  const handleSaveArticle = async (articleId: string) => {
+    const res = await fetch("/api/saved-articles", {
+      method: "POST",
+      headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ articleId }),
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    setSavedArticleIds((prev) => {
+      const next = new Set(prev);
+      if (data.saved) next.add(articleId);
+      else next.delete(articleId);
+      return next;
+    });
+  };
 
   const handleBookmark = async (tweetId: string) => {
     const res = await fetch("/api/bookmark", {
@@ -174,10 +212,11 @@ export default function Feed({ token }: { token: string }) {
               {threadTweets.map((t, i) => (
                 <Tweet
                   key={t.id}
-                  tweet={t}
+                  tweet={{ ...t, articleId: t.articleId, articleUrl: t.article.url, isArticleSaved: savedArticleIds.has(t.articleId) }}
                   isThreadPart={true}
                   isThreadLast={i === threadTweets.length - 1}
                   onBookmark={handleBookmark}
+                  onSaveArticle={handleSaveArticle}
                   onSeen={handleSeen}
                 />
               ))}
@@ -188,8 +227,9 @@ export default function Feed({ token }: { token: string }) {
         return (
           <Tweet
             key={tweet.id}
-            tweet={tweet}
+            tweet={{ ...tweet, articleId: tweet.articleId, articleUrl: tweet.article.url, isArticleSaved: savedArticleIds.has(tweet.articleId) }}
             onBookmark={handleBookmark}
+            onSaveArticle={handleSaveArticle}
             onSeen={handleSeen}
           />
         );

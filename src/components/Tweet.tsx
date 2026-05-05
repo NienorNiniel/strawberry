@@ -9,9 +9,13 @@ interface TweetData {
   threadOrder: number;
   isDueForReview: boolean;
   bookmark: { id: string; srStage: number } | null;
+  articleId: string;
+  articleUrl: string;
+  isArticleSaved: boolean;
   article: {
     title: string;
-    source: { name: string };
+    publishedAt: string | null;
+    source: { name: string; iconUrl: string | null };
   };
 }
 
@@ -20,6 +24,7 @@ interface TweetProps {
   isThreadPart?: boolean;
   isThreadLast?: boolean;
   onBookmark: (tweetId: string) => void;
+  onSaveArticle: (articleId: string) => void;
   onSeen: (tweetId: string) => void;
 }
 
@@ -28,6 +33,7 @@ export default function Tweet({
   isThreadPart = false,
   isThreadLast = false,
   onBookmark,
+  onSaveArticle,
   onSeen,
 }: TweetProps) {
   const ref = useRef<HTMLDivElement>(null);
@@ -36,9 +42,12 @@ export default function Tweet({
     const el = ref.current;
     if (!el) return;
 
+    let wasVisible = false;
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
+          wasVisible = true;
+        } else if (wasVisible) {
           onSeen(tweet.id);
           observer.disconnect();
         }
@@ -60,21 +69,33 @@ export default function Tweet({
       } ${!isThreadPart || isThreadLast ? "border-b border-gray-100" : ""}`}
     >
       <div className="flex gap-3">
-        {/* Avatar - source initial */}
-        <div className="flex-shrink-0 w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 font-semibold text-sm">
-          {tweet.article.source.name.charAt(0).toUpperCase()}
-        </div>
+        {/* Avatar - source icon or initial */}
+        {tweet.article.source.iconUrl ? (
+          <img
+            src={tweet.article.source.iconUrl}
+            alt={tweet.article.source.name}
+            className="flex-shrink-0 w-10 h-10 rounded-full object-cover bg-rose-50"
+          />
+        ) : (
+          <div className="flex-shrink-0 w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 font-semibold text-sm">
+            {tweet.article.source.name.charAt(0).toUpperCase()}
+          </div>
+        )}
 
         <div className="flex-1 min-w-0">
           {/* Header */}
-          <div className="flex items-center gap-1 text-sm">
-            <span className="font-bold text-gray-900 truncate">
+          <div className="text-sm">
+            <span className="font-bold text-gray-900">
               {tweet.article.source.name}
             </span>
-            <span className="text-gray-400 truncate">
-              &middot; {tweet.article.title.slice(0, 40)}
-              {tweet.article.title.length > 40 ? "..." : ""}
-            </span>
+          </div>
+          <div className="text-xs text-gray-400 leading-snug">
+            {tweet.article.title}
+            {tweet.article.publishedAt && (
+              <span className="text-gray-300">
+                {" "}· {String(new Date(tweet.article.publishedAt).getMonth() + 1).padStart(2, "0")}/{String(new Date(tweet.article.publishedAt).getFullYear()).slice(2)}
+              </span>
+            )}
           </div>
 
           {/* Thread indicator */}
@@ -119,6 +140,24 @@ export default function Tweet({
                   {tweet.bookmark.srStage + 1}/6
                 </span>
               )}
+            </button>
+            <button
+              onClick={() => onSaveArticle(tweet.articleId)}
+              className="group flex items-center gap-1"
+              title={tweet.isArticleSaved ? "Remove from reading list" : "Save article for later"}
+            >
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill={tweet.isArticleSaved ? "#e11d48" : "none"}
+                stroke={tweet.isArticleSaved ? "#e11d48" : "#9ca3af"}
+                strokeWidth="2"
+                className="group-hover:stroke-rose-500 transition-colors"
+              >
+                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+              </svg>
             </button>
           </div>
         </div>

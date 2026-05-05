@@ -11,6 +11,25 @@ export interface ResolvedSource {
   name: string;
   feedUrl: string;
   type: "SUBSTACK" | "RSS";
+  iconUrl: string | null;
+}
+
+async function fetchFavicon(feedUrl: string): Promise<string | null> {
+  try {
+    const url = new URL(feedUrl);
+    const origin = url.origin;
+    // Try Google's favicon service — reliable and returns consistent sizes
+    const googleFavicon = `https://www.google.com/s2/favicons?domain=${url.hostname}&sz=128`;
+    const res = await fetch(googleFavicon, { method: "HEAD" });
+    if (res.ok) return googleFavicon;
+    // Fallback to /favicon.ico
+    const fallback = `${origin}/favicon.ico`;
+    const res2 = await fetch(fallback, { method: "HEAD" });
+    if (res2.ok) return fallback;
+  } catch {
+    // ignore
+  }
+  return null;
 }
 
 export async function resolveSourceUrl(url: string): Promise<ResolvedSource> {
@@ -31,10 +50,12 @@ export async function resolveSourceUrl(url: string): Promise<ResolvedSource> {
   if (pubMatch) {
     const feedUrl = `https://${pubMatch[1]}.substack.com/feed`;
     const feed = await parser.parseURL(feedUrl);
+    const iconUrl = await fetchFavicon(feedUrl);
     return {
       name: feed.title || pubMatch[1],
       feedUrl,
       type: "SUBSTACK",
+      iconUrl,
     };
   }
 
@@ -46,10 +67,12 @@ export async function resolveSourceUrl(url: string): Promise<ResolvedSource> {
     trimmed.endsWith("/atom")
   ) {
     const feed = await parser.parseURL(trimmed);
+    const iconUrl = await fetchFavicon(trimmed);
     return {
       name: feed.title || new URL(trimmed).hostname,
       feedUrl: trimmed,
       type: "RSS",
+      iconUrl,
     };
   }
 
@@ -60,10 +83,12 @@ export async function resolveSourceUrl(url: string): Promise<ResolvedSource> {
       const candidate = trimmed + path;
       const feed = await parser.parseURL(candidate);
       if (feed.items && feed.items.length > 0) {
+        const iconUrl = await fetchFavicon(candidate);
         return {
           name: feed.title || new URL(trimmed).hostname,
           feedUrl: candidate,
           type: "RSS",
+          iconUrl,
         };
       }
     } catch {
@@ -75,10 +100,12 @@ export async function resolveSourceUrl(url: string): Promise<ResolvedSource> {
   try {
     const feed = await parser.parseURL(trimmed);
     if (feed.items && feed.items.length > 0) {
+      const iconUrl = await fetchFavicon(trimmed);
       return {
         name: feed.title || new URL(trimmed).hostname,
         feedUrl: trimmed,
         type: "RSS",
+        iconUrl,
       };
     }
   } catch {
@@ -125,10 +152,12 @@ async function resolveSubstackProfile(
           const profileName = titleMatch
             ? titleMatch[1].replace(/\s*[-|].*$/, "").trim()
             : null;
+          const iconUrl = await fetchFavicon(feedUrl);
           return {
             name: profileName || feed.title || subdomain,
             feedUrl,
             type: "SUBSTACK",
+            iconUrl,
           };
         } catch {
           continue;
@@ -147,6 +176,115 @@ export interface FetchedArticle {
   title: string;
   content: string;
   publishedAt: Date | null;
+}
+
+async function fetchSitemapUrls(baseUrl: string): Promise<string[]> {
+  const origin = new URL(baseUrl).origin;
+  const sitemapPaths = ["/sitemap.xml", "/sitemap_index.xml", "/sitemap-posts.xml"];
+  const urls: string[] = [];
+
+  for (const path of sitemapPaths) {
+    try {
+      const res = await fetch(`${origin}${path}`, {
+        headers: { "User-Agent": "Strawberry/1.0 (RSS Reader)" },
+      });
+      if (!res.ok) continue;
+      const xml = await res.text();
+
+      // Check if this is a sitemap index (contains other sitemaps)
+      const sitemapLocs = [...xml.matchAll(/<sitemap>\s*<loc>([^<]+)<\/loc>/g)].map(m => m[1]);
+      if (sitemapLocs.length > 0) {
+        // Fetch each child sitemap
+        for (const loc of sitemapLocs.slice(0, 5)) {
+          try {
+            const childRes = await fetch(loc, {
+              headers: { "User-Agent": "Strawberry/1.0 (RSS Reader)" },
+            });
+            if (!childRes.ok) continue;
+            const childXml = await childRes.text();
+            const childUrls = [...childXml.matchAll(/<url>\s*<loc>([^<]+)<\/loc>/g)].map(m => m[1]);
+            urls.push(...childUrls);
+          } catch {
+            continue;
+          }
+        }
+      }
+
+      // Also extract direct URLs from this sitemap
+      const directUrls = [...xml.matchAll(/<url>\s*<loc>([^<]+)<\/loc>/g)].map(m => m[1]);
+      urls.push(...directUrls);
+
+      if (urls.length > 0) break;
+    } catch {
+      continue;
+    }
+  }
+
+  // Filter to likely article URLs (skip homepages, category pages, tag pages, images)
+  return urls.filter(u => {
+    const path = new URL(u).pathname;
+    return path !== "/" &&
+      !path.match(/^\/(tag|category|author|page|search|about|contact|privacy|terms)\b/i) &&
+      !path.match(/\.(jpg|png|gif|pdf|xml)$/i);
+  });
+}
+
+async function fetchPageContent(url: string): Promise<{ title: string; content: string } | null> {
+  try {
+    const res = await fetch(url, {
+      headers: { "User-Agent": "Strawberry/1.0 (RSS Reader)" },
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+
+    // Extract title
+    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+    const ogTitleMatch = html.match(/<meta[^>]+property="og:title"[^>]+content="([^"]+)"/i);
+    const title = ogTitleMatch?.[1] || titleMatch?.[1]?.replace(/\s*[-|].*$/, "").trim() || "";
+
+    // Extract article content - try <article>, then <main>, then <body>
+    let content = "";
+    const articleMatch = html.match(/<article[^>]*>([\s\S]*?)<\/article>/i);
+    const mainMatch = html.match(/<main[^>]*>([\s\S]*?)<\/main>/i);
+
+    content = articleMatch?.[1] || mainMatch?.[1] || "";
+
+    if (!content || content.length < 200) return null;
+    if (!title) return null;
+
+    return { title, content };
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchArticlesFromSitemap(
+  feedUrl: string,
+  existingUrls: Set<string>,
+  limit: number = 50
+): Promise<FetchedArticle[]> {
+  const sitemapUrls = await fetchSitemapUrls(feedUrl);
+  const newUrls = sitemapUrls.filter(u => !existingUrls.has(u)).slice(0, limit);
+
+  const articles: FetchedArticle[] = [];
+  // Fetch in small batches to avoid overwhelming the server
+  for (let i = 0; i < newUrls.length; i += 3) {
+    const batch = newUrls.slice(i, i + 3);
+    const results = await Promise.all(batch.map(url => fetchPageContent(url)));
+    for (let j = 0; j < batch.length; j++) {
+      const result = results[j];
+      if (result) {
+        articles.push({
+          url: batch[j],
+          title: result.title,
+          content: result.content,
+          publishedAt: null,
+        });
+      }
+    }
+  }
+
+  return articles;
 }
 
 export async function fetchArticlesFromFeed(

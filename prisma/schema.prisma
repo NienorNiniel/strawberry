@@ -18,22 +18,31 @@ model Source {
   name      String
   type      SourceType
   feedUrl   String
+  iconUrl   String?
   createdAt DateTime   @default(now())
   articles  Article[]
 }
 
 model Article {
-  id          String   @id @default(cuid())
-  sourceId    String
-  url         String   @unique
-  title       String
-  content     String
-  publishedAt DateTime?
-  fetchedAt   DateTime @default(now())
-  source      Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-  tweets      Tweet[]
+  id           String         @id @default(cuid())
+  sourceId     String
+  url          String         @unique
+  title        String
+  content      String
+  publishedAt  DateTime?
+  fetchedAt    DateTime       @default(now())
+  source       Source         @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  tweets       Tweet[]
+  savedArticle SavedArticle?
 
   @@index([sourceId])
+}
+
+model SavedArticle {
+  id        String   @id @default(cuid())
+  articleId String   @unique
+  createdAt DateTime @default(now())
+  article   Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
 }
 
 model Tweet {

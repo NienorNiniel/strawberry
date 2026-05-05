@@ -38,6 +38,7 @@ export const POST = withAuth(async (req: NextRequest) => {
         name: resolved.name,
         type: resolved.type,
         feedUrl: resolved.feedUrl,
+        iconUrl: resolved.iconUrl,
       },
     });
 

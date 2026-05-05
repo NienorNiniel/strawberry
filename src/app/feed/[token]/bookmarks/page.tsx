@@ -10,10 +10,13 @@ interface TweetData {
   threadId: string | null;
   threadOrder: number;
   isDueForReview: boolean;
+  articleId: string;
   bookmark: { id: string; srStage: number } | null;
   article: {
+    url: string;
     title: string;
-    source: { name: string };
+    publishedAt: string | null;
+    source: { name: string; iconUrl: string | null };
   };
 }
 
@@ -54,6 +57,7 @@ export default function BookmarksPage() {
   );
 
   const handleSeen = useCallback(() => {}, []);
+  const handleSaveArticle = useCallback(() => {}, []);
 
   if (loading) {
     return (
@@ -97,8 +101,12 @@ export default function BookmarksPage() {
                 ...b.tweet,
                 isDueForReview: true,
                 bookmark: { id: b.id, srStage: b.srStage },
+                articleId: b.tweet.articleId,
+                articleUrl: b.tweet.article.url,
+                isArticleSaved: false,
               }}
               onBookmark={handleBookmark}
+              onSaveArticle={handleSaveArticle}
               onSeen={handleSeen}
             />
           ))}
@@ -119,8 +127,12 @@ export default function BookmarksPage() {
                 ...b.tweet,
                 isDueForReview: false,
                 bookmark: { id: b.id, srStage: b.srStage },
+                articleId: b.tweet.articleId,
+                articleUrl: b.tweet.article.url,
+                isArticleSaved: false,
               }}
               onBookmark={handleBookmark}
+              onSaveArticle={handleSaveArticle}
               onSeen={handleSeen}
             />
           ))}
