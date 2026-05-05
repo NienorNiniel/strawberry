@@ -1,8 +1,8 @@
 const { Client } = require("pg");
 const crypto = require("crypto");
 
-const DB =
-  "postgresql://neondb_owner:npg_v4wD7bNZKhFe@ep-wild-firefly-abuujuq5.eu-west-2.aws.neon.tech/neondb?sslmode=require";
+const DB = process.env.DATABASE_URL;
+if (!DB) throw new Error("DATABASE_URL env var is required");
 
 const uid = () => crypto.randomUUID();
 
